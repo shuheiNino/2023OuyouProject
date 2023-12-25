@@ -16,12 +16,12 @@ int Ele_val = 1500;
 //サーボ初期設定
 Servo servoRudder;
 Servo servoElevator;
-float mid_servoRud = 1500;
-float mid_servoElevator = 1500;
+float mid_servoRud = 1570;
+float mid_servoElevator = 1430;
 
 //スティックの感度調整(0~400)
- int sensitivity_Rud = 400;
- int sensitivity_Ele = 400;
+ int sensitivity_Rud = 330;
+ int sensitivity_Ele = 330;
 
 void setup()
 {
@@ -39,7 +39,7 @@ void setup()
 void loop()
 {
   Rud_val = calc_miliseconds(LEFT_x_value, mid_servoRud, sensitivity_Rud);
-  Ele_val = calc_miliseconds(RIGHT_y_value, mid_servoElevator, sensitivity_Ele);
+  Ele_val = constrain(calc_miliseconds(RIGHT_y_value, mid_servoElevator, sensitivity_Ele),1200,1830);
   servoRudder.writeMicroseconds(Rud_val);
   servoElevator.writeMicroseconds(Ele_val);
   Serial.print(Rud_val);
