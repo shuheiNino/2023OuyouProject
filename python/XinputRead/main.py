@@ -1,5 +1,8 @@
 import XInput;
 import serial;
+import pandas as pd
+from datetime import datetime
+import time
 
 def main():
   #confirm python3
@@ -17,7 +20,10 @@ def readXinput():
   LEFTvalue_y = 0
   RIGHTvalue_x = 0
   RIGHTvalue_y = 0
-  while 1:
+
+  data = pd.DataFrame(columns=["Timestamp", "Heading", "Pitch", "Roll", "Depth", "Rudder", "Elevator"])
+
+  while True:
     #read XInput value
     events = XInput.get_events()
     for event in events:
@@ -41,8 +47,18 @@ def readXinput():
         ser.write(buff.encode('utf-8'))
     
     if ser.in_waiting>0:
-      serial_value = ser.readline().decode('UTF-8')
-      print("受信したデータ: " + serial_value)
+      serial_value = ser.readline().decode('UTF-8').strip()
+      # Parse the received data
+      values = serial_value.split(',')
+      if len(values) == 6:
+          heading, pitch, roll, depth, rudder, elevator = map(float, values)
+          print(f"heading: {heading: .2f}, pitch: {pitch: .2f}, roll: {roll: .2f}, depth: {depth: .2f}, rudder: {rudder}, elevator: {elevator}")
+          timestamp = datetime.now()
+          data = data.append({"Timestamp": timestamp, "Heading": heading, "Pitch": pitch,
+                              "Roll": roll, "Depth": depth, "Rudder": rudder, "Elevator": elevator},
+                              ignore_index=True)
+          data.to_csv("sensor_data.csv", index=False)
+          print("Data saved to CSV.")
 
 if __name__ == "__main__":
   main()
