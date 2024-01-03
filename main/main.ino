@@ -1,27 +1,42 @@
 #include <Wire.h>
 #include <Servo.h>
+#include "servoOperation.h"
 
-String cmds[4] = {"\0"}; // 分割された文字列を格納する配列 
+#include <MadgwickAHRS.h>
 
-//ジョイコン値格納場所
-float LEFT_x_value = 0;
-float LEFT_y_value = 0;
-float RIGHT_x_value = 0;
-float RIGHT_y_value = 0;
+#include "MS5837.h"
 
-//miliseconds格納場所
-int Rud_val = 1500;
-int Ele_val = 1500;
+#include "BMX055Class.h"
 
-//サーボ初期設定
-Servo servoRudder;
-Servo servoElevator;
-float mid_servoRud = 1570;
-float mid_servoElevator = 1430;
+String cmds_string[4] = {"\0"}; // 分割された文字列を格納する配列
+float cmds_float[4] = {0};
+servoOperation servoOperation1;
 
-//スティックの感度調整(0~400)
- int sensitivity_Rud = 330;
- int sensitivity_Ele = 330;
+// BMX055 加速度センサのI2Cアドレス  
+#define Addr_Accl 0x19  // (JP1,JP2,JP3 = Openの時)
+// BMX055 ジャイロセンサのI2Cアドレス
+#define Addr_Gyro 0x69  // (JP1,JP2,JP3 = Openの時)
+// BMX055 磁気センサのI2Cアドレス
+#define Addr_Mag 0x13   // (JP1,JP2,JP3 = Openの時)
+
+// センサーの値を保存するグローバル変数
+float xAccl = 0.00;
+float yAccl = 0.00;
+float zAccl = 0.00;
+float xGyro = 0.00;
+float yGyro = 0.00;
+float zGyro = 0.00;
+int   xMag  = 0;
+int   yMag  = 0;
+int   zMag  = 0;
+float  roll, pitch, heading, q0, q1, q2, q3;
+Madgwick filter;
+MS5837 sensor;
+BMX055Class BMX055(Addr_Accl, Addr_Gyro, Addr_Mag);
+
+unsigned long previousMillis = 0;
+const long interval = 1000;  // 1秒の間隔
+char buff[50];
 
 void setup()
 {
@@ -29,22 +44,50 @@ void setup()
   Serial.begin(9600);
   //auto sensor_BMX055 = Sensor_BMX055();
 
-  //servo　初期PIN設定
-  servoRudder.attach(3);
-  servoElevator.attach(5);
-  servoRudder.writeMicroseconds(mid_servoRud);
-  servoElevator.writeMicroseconds(mid_servoElevator);
+  servoOperation1.servoWrite();
 }
 
 void loop()
 {
-  Rud_val = calc_miliseconds(LEFT_x_value, mid_servoRud, sensitivity_Rud);
-  Ele_val = constrain(calc_miliseconds(RIGHT_y_value, mid_servoElevator, sensitivity_Ele),1200,1830);
-  servoRudder.writeMicroseconds(Rud_val);
-  servoElevator.writeMicroseconds(Ele_val);
-  Serial.print(Rud_val);
-  Serial.print(",");
-  Serial.println(Ele_val);
+  unsigned long currentMillis = millis();
+  //BMX055からroll,pitch,headingの出力
+  //BMX055 加速度の読み取り
+  BMX055.BMX055_Accl();
+  
+  //BMX055 ジャイロの読み取り
+  BMX055.BMX055_Gyro();
+  
+  //BMX055 磁気の読み取り
+  BMX055.BMX055_Mag();
+
+  xAccl = BMX055.getXAccl();
+  yAccl = BMX055.getYAccl();
+  zAccl = BMX055.getZAccl();
+  xGyro = BMX055.getXGyro();
+  yGyro = BMX055.getYGyro();
+  zGyro = BMX055.getZGyro();
+  xMag = BMX055.getXMag();
+  yMag = BMX055.getYMag();
+  zMag = BMX055.getZMag();
+
+  filter.updateIMU(xGyro, yGyro, zGyro, xAccl, yAccl, zAccl);
+
+  //bar02深度センサ読み取り
+  sensor.read();
+
+  //servo operation
+  servoOperation1.servoWrite();
+
+  // 1秒ごとに処理を実行
+  if (currentMillis - previousMillis >= interval) {
+    // タイマーリセット
+    previousMillis = currentMillis;
+    //serial送信
+    sprintf(buff," %f, %f, %f, %f, %i, %i\n", heading, pitch, roll, sensor.depth(), servoOperation1.Rud_value(), servoOperation1.Ele_value());
+    Serial.print(buff);
+  }
+
+  //serial受信
   if(Serial.available() > 0) {
     serEvent();
   }
@@ -53,17 +96,19 @@ void loop()
 void serEvent(){
   //割り込み処理のはず
   String input = Serial.readStringUntil('\n');
-  //Serial.println(input);
-  int data_num = split(input, ',', cmds);
+  int data_num = split(input, ',', cmds_string);
+
   //Serial.println(cmds[0]);
-  LEFT_x_value = cmds[0].toFloat();
-  LEFT_y_value = cmds[1].toFloat();
-  RIGHT_x_value = cmds[2].toFloat();
-  RIGHT_y_value = cmds[3].toFloat();
+  cmds_float[0] = cmds_string[0].toFloat();
+  cmds_float[1] = cmds_string[1].toFloat();
+  cmds_float[2] = cmds_string[2].toFloat();
+  cmds_float[3] = cmds_string[3].toFloat();
+
+  servoOperation1.serEvent(cmds_float);
   
   // cmds 配列の中身を空にする
   for (int i = 0; i < 4; ++i) {
-    cmds[i] = "";
+    cmds_string[i] = "";
   }
 }
 
@@ -84,18 +129,5 @@ int split(String data, char delimiter, String *dst){
     return (index + 1);
 }
 
-//caluculation of miliseconds(from -1~1 to 1100~1900)
-int calc_miliseconds(float rawvalue, int midValue, int sensitivity){
-  int ms_temp = midValue + int(sensitivity * rawvalue);
-  if (ms_temp >= 1900) {
-    return 1900;
-  } else {
-    if (ms_temp <= 1100) {
-      return 1100;
-    } else {
-      return ms_temp;
-    }
-  }
-}
   
 //=====================================================================================//
