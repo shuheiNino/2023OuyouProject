@@ -1,7 +1,8 @@
 #ifndef servoOperation_h
 #define servoOperation_h
-#include <string>
 #include <Servo.h>
+#include <Arduino.h>
+
 
 class servoOperation{
   //member variable
@@ -33,7 +34,6 @@ class servoOperation{
   //member function
   private:
     int calc_miliseconds(float rawvalue, int midValue, int sensitivity);
-    int constrain(int value, int min, int max);
 
   public:
     //constructer

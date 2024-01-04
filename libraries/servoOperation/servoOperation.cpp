@@ -27,13 +27,4 @@ int servoOperation::calc_miliseconds(float rawvalue, int midValue, int sensitivi
   return midValue + int(sensitivity * rawvalue);
 }
 
-int servoOperation::constrain(int value, int min, int max){
-  if (value < min) {
-      return min;
-  } else if (value > max) {
-    return max;
-  } else {
-    return value;
-  }
-}
 
